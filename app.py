@@ -2,9 +2,12 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 import re
+import base64
+import json
+import time
 
 st.set_page_config(
-    page_title="ATS resume checker",
+    page_title="Aegis Career Intelligence Platform",
     page_icon="🎯",
     layout="wide"
 )
@@ -44,12 +47,21 @@ def init_standalone_db():
 
 init_standalone_db()
 
+def simulate_jwt_encode(payload, secret="secret"):
+    header = {"alg": "HS256", "typ": "JWT"}
+    header_b64 = base64.urlsafe_b64encode(json.dumps(header).encode()).decode().replace("=", "")
+    payload_b64 = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().replace("=", "")
+    mock_signature = base64.urlsafe_b64encode((header_b64 + "." + payload_b64 + secret).encode()).decode().replace("=", "")
+    return f"{header_b64}.{payload_b64}.{mock_signature}"
+
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 if 'username' not in st.session_state:
     st.session_state['username'] = ""
 if 'is_admin' not in st.session_state:
     st.session_state['is_admin'] = False
+if 'jwt_token' not in st.session_state:
+    st.session_state['jwt_token'] = ""
 
 def check_password_strength(password):
     if len(password) < 8:
@@ -138,6 +150,13 @@ if not st.session_state['logged_in']:
                         st.session_state['logged_in'] = True
                         st.session_state['username'] = login_email
                         st.session_state['is_admin'] = bool(row[1])
+                        
+                        mock_payload = {
+                            "sub": login_email,
+                            "role": "admin" if row[1] else "user",
+                            "exp": int(time.time()) + 3600
+                        }
+                        st.session_state['jwt_token'] = simulate_jwt_encode(mock_payload)
                         st.success("🎯 Token verified! Transferring to secure application profile space...")
                         st.rerun()
                     else:
@@ -151,17 +170,21 @@ else:
     st.sidebar.write(f"Logged as: **{st.session_state['username']}**")
     st.sidebar.write(f"Access Privilege: `{role_label}`")
     
+    if st.session_state['jwt_token']:
+        st.sidebar.text_area("🎫 Active JWT Session Token Bearer", value=st.session_state['jwt_token'], height=90, disabled=True)
+    
     if st.session_state['is_admin']:
-        available_pages = ["System Blueprint Overview", "User Profile Management", "Analyze & Parse Document", "Database Core Records"]
+        available_pages = ["Analyze & Parse Document", "System Blueprint Overview", "User Profile Management", "Database Core Records"]
     else:
-        available_pages = ["System Blueprint Overview", "User Profile Management", "Analyze & Parse Document"]
+        available_pages = ["Analyze & Parse Document", "System Blueprint Overview", "User Profile Management"]
         
-    page = st.sidebar.radio("Navigate System Framework:", available_pages)
+    page = st.sidebar.radio("Navigate System Framework:", available_pages, index=0)
     
     if st.sidebar.button("Terminate Session (Log Out) 🛑"):
         st.session_state['logged_in'] = False
         st.session_state['username'] = ""
         st.session_state['is_admin'] = False
+        st.session_state['jwt_token'] = ""
         st.rerun()
 
     if page == "System Blueprint Overview":
@@ -172,7 +195,7 @@ else:
         m_col1, m_col2 = st.columns(2)
         with m_col1:
             st.info("📦 **Milestone 1 Key Target Metrics Completed**\n"
-                    "* **1. User Authentication:** Handled completely via secure, isolated session state validation routines.\n"
+                    "* **1. User Authentication:** Handled completely via secure session state validation routines with built-in JWT Bearer representation.\n"
                     "* **2. User Profile Management:** Interactive CRUD updates writing directly to standard schemas.\n"
                     "* **3. Resume Upload Module:** Native structural file buffers processing **PDF & DOCX** format criteria.\n"
                     "* **4. Resume Parsing (Basic):** Extraction simulation pipelines pulling metadata patterns instantly.\n"
